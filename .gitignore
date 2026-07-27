@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+*.log
+.env
+.env.local
+.env.*.local
+
+# NOTE: dist/ is intentionally NOT ignored. It is committed so that
+# `npm install github:tmstrrs-jpg/ap-pims-shared-ui#vX.Y.Z` needs no build step.
