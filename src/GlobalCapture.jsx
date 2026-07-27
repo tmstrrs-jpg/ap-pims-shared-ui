@@ -89,7 +89,7 @@ export default function GlobalCapture({ supabase, module = "portal", context, ac
       </button>
       )}
       {openModal && (
-        <RequestModal context={ctx} actions={[]} accent={accent}
+        <RequestModal supabase={supabase} context={ctx} actions={[]} accent={accent}
           onSubmit={submit} onClose={() => setOpenModal(false)} />
       )}
     </>

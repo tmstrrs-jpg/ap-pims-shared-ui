@@ -7,13 +7,58 @@ const REQUEST_KINDS = [
   ["improvement", "Improvement"],
   ["question", "Question"]
 ];
+const SCREENSHOT_BUCKET = "change-request-screenshots";
+const MAX_SCREENSHOTS = 5;
+const MAX_SCREENSHOT_BYTES = 10 * 1024 * 1024;
+const DISPLAYABLE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const HEIC = /(^image\/hei[cf]$)|(\.hei[cf]$)/i;
+function screenshotRejection(file) {
+  if (HEIC.test(file.type) || HEIC.test(file.name)) {
+    return `"${file.name}" is an iPhone HEIC photo, which no browser can display. Take a screenshot instead, or switch Settings → Camera → Formats → "Most Compatible".`;
+  }
+  if (!DISPLAYABLE_TYPES.includes(file.type)) {
+    return `"${file.name}" is not a JPEG, PNG or WebP image.`;
+  }
+  if (file.size > MAX_SCREENSHOT_BYTES) {
+    return `"${file.name}" is ${(file.size / 1048576).toFixed(1)}MB — the limit is 10MB.`;
+  }
+  return null;
+}
+async function uploadScreenshots(supabase, files) {
+  var _a;
+  if (!(files == null ? void 0 : files.length)) return { paths: [], errors: [] };
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = (_a = userData == null ? void 0 : userData.user) == null ? void 0 : _a.id;
+  if (!uid) return { paths: [], errors: ["Not signed in — screenshots could not be uploaded."] };
+  const paths = [], errors = [];
+  const stamp = Date.now();
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-60);
+    const { error } = await supabase.storage.from(SCREENSHOT_BUCKET).upload(`${uid}/${stamp}-${i}-${safe}`, file, { contentType: file.type, upsert: false });
+    if (error) errors.push(`${file.name}: ${error.message}`);
+    else paths.push(`${uid}/${stamp}-${i}-${safe}`);
+  }
+  return { paths, errors };
+}
+async function screenshotUrls(supabase, paths, expiresIn = 3600) {
+  if (!(paths == null ? void 0 : paths.length)) return [];
+  const { data, error } = await supabase.storage.from(SCREENSHOT_BUCKET).createSignedUrls(paths, expiresIn);
+  if (error) return [];
+  return (data || []).filter((d) => d.signedUrl).map((d) => ({ path: d.path, url: d.signedUrl }));
+}
 async function loadRequests(supabase, module) {
   const { data, error } = await supabase.from("change_requests").select("*").eq("module", module).order("created_at", { ascending: false });
   if (error) throw error;
   return data || [];
 }
-async function submitRequest(supabase, module, { kind, title, details, context }) {
-  const { error } = await supabase.from("change_requests").insert({ module, kind, title, details, context: context || {} });
+async function submitRequest(supabase, module, payload) {
+  const { kind, title, details, context, observed_behavior, expected_behavior, screenshot_paths } = payload;
+  const row = { module, kind, title, details, context: context || {} };
+  if (observed_behavior) row.observed_behavior = observed_behavior;
+  if (expected_behavior) row.expected_behavior = expected_behavior;
+  if (screenshot_paths == null ? void 0 : screenshot_paths.length) row.screenshot_paths = screenshot_paths;
+  const { error } = await supabase.from("change_requests").insert(row);
   if (error) {
     alert("Could not send request: " + error.message);
     return false;
@@ -25,21 +70,67 @@ const makeDescribe = (actions = []) => (a) => {
   const def = actions.find((x) => x.type === a.type);
   return def ? def.describe(a) : null;
 };
-function RequestModal({ context = {}, actions = [], onSubmit, onClose, accent = "#0e4c62" }) {
+const PROMPTS = {
+  data_fix: {
+    observed: "What happened?",
+    observedHint: "The wrong value, the error, what you saw on screen.",
+    expected: "What should it have been?",
+    expectedHint: "The correct value, or what you expected instead."
+  },
+  improvement: {
+    observed: "What's hard about it today?",
+    observedHint: "The slow or awkward part of how it works now.",
+    expected: "What should it do instead?",
+    expectedHint: "Describe the version that would save you time."
+  }
+};
+function RequestModal({ supabase, context = {}, actions = [], onSubmit, onClose, accent = "#0e4c62" }) {
   var _a, _b;
   const [kind, setKind] = useState("data_fix");
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
+  const [observed, setObserved] = useState("");
+  const [expected, setExpected] = useState("");
+  const [shots, setShots] = useState([]);
+  const [shotErrors, setShotErrors] = useState([]);
   const [action, setAction] = useState("");
   const [actionValue, setActionValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState("");
   const ctxBits = [context.asset_label, context.txn_date, context.card_number ? "card •••" + String(context.card_number).slice(-3) : null, context.label].filter(Boolean);
   const applicable = actions.filter((a) => a.scope === "transaction" ? context.transaction_id != null : a.scope === "card" ? context.card_number != null : true);
   const canStructure = kind === "data_fix" && applicable.length > 0;
   const selDef = applicable.find((a) => a.type === action);
+  const guided = PROMPTS[kind];
+  const addFiles = (fileList) => {
+    const incoming = Array.from(fileList || []);
+    if (!incoming.length) return;
+    const errs = [], keep = [];
+    for (const f of incoming) {
+      const why = screenshotRejection(f);
+      if (why) errs.push(why);
+      else keep.push(f);
+    }
+    const room = MAX_SCREENSHOTS - shots.length;
+    if (keep.length > room) errs.push(`Only ${MAX_SCREENSHOTS} images per request — ${keep.length - room} not attached.`);
+    setShots([...shots, ...keep.slice(0, Math.max(0, room))]);
+    setShotErrors(errs);
+  };
+  const removeShot = (i) => {
+    setShots(shots.filter((_, n) => n !== i));
+    setShotErrors([]);
+  };
   const submit = async () => {
     if (!title.trim()) {
       alert("Give the request a short title.");
+      return;
+    }
+    if (guided && !observed.trim()) {
+      alert(guided.observed);
+      return;
+    }
+    if (guided && !expected.trim()) {
+      alert(guided.expected);
       return;
     }
     if ((selDef == null ? void 0 : selDef.input) && !String(actionValue).trim()) {
@@ -52,15 +143,48 @@ function RequestModal({ context = {}, actions = [], onSubmit, onClose, accent = 
       if (selDef.input) ctx.action.value = selDef.cast ? selDef.cast(actionValue) : actionValue;
     }
     setSaving(true);
-    const ok = await onSubmit({ kind, title: title.trim(), details: details.trim() || null, context: ctx });
+    let paths = [];
+    if (shots.length && supabase) {
+      setProgress(`Uploading ${shots.length} image${shots.length > 1 ? "s" : ""}…`);
+      const res = await uploadScreenshots(supabase, shots);
+      paths = res.paths;
+      if (res.errors.length) setShotErrors(res.errors);
+    }
+    setProgress("Sending…");
+    const ok = await onSubmit({
+      kind,
+      title: title.trim(),
+      details: details.trim() || null,
+      observed_behavior: guided ? observed.trim() : null,
+      expected_behavior: guided ? expected.trim() : null,
+      screenshot_paths: paths,
+      context: ctx
+    });
     setSaving(false);
+    setProgress("");
     if (ok) onClose();
   };
   const field = { width: "100%", padding: "8px 10px", fontSize: 13, fontFamily: F, border: "1px solid #e0e0d8", borderRadius: 8, boxSizing: "border-box" };
   const label = { fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.4px" };
+  const hint = { fontSize: 11, color: "#94a3b8", margin: "3px 0 0" };
   return /* @__PURE__ */ jsxs(Fragment, { children: [
     /* @__PURE__ */ jsx("div", { onClick: onClose, style: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", zIndex: 1100 } }),
-    /* @__PURE__ */ jsxs("div", { style: { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: "min(480px, 92vw)", background: "#fff", borderRadius: 14, boxShadow: "0 10px 40px rgba(0,0,0,0.2)", zIndex: 1110, padding: 20, fontFamily: F }, children: [
+    /* @__PURE__ */ jsxs("div", { style: {
+      position: "fixed",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%,-50%)",
+      width: "min(480px, 92vw)",
+      maxHeight: "90vh",
+      overflowY: "auto",
+      background: "#fff",
+      borderRadius: 14,
+      boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+      zIndex: 1110,
+      padding: 20,
+      fontFamily: F,
+      WebkitOverflowScrolling: "touch"
+    }, children: [
       /* @__PURE__ */ jsx("div", { style: { fontSize: 16, fontWeight: 800, color: "#111", marginBottom: 4 }, children: "Request a change" }),
       ctxBits.length > 0 && /* @__PURE__ */ jsxs("div", { style: { fontSize: 12, color: "#64748b", marginBottom: 12 }, children: [
         "Re: ",
@@ -89,9 +213,59 @@ function RequestModal({ context = {}, actions = [], onSubmit, onClose, accent = 
           (selDef.input.options || []).map(([v, lbl]) => /* @__PURE__ */ jsx("option", { value: v, children: lbl }, v))
         ] })
       ] }),
-      /* @__PURE__ */ jsx("label", { style: label, children: "Details" }),
-      /* @__PURE__ */ jsx("textarea", { value: details, onChange: (e) => setDetails(e.target.value), rows: 4, placeholder: "What should change, and what it should be.", style: { ...field, margin: "6px 0 16px", resize: "vertical" } }),
-      /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "flex-end", gap: 8 }, children: [
+      guided ? /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("label", { style: label, children: guided.observed }),
+        /* @__PURE__ */ jsx("textarea", { value: observed, onChange: (e) => setObserved(e.target.value), rows: 2, placeholder: guided.observedHint, style: { ...field, margin: "6px 0 0", resize: "vertical" } }),
+        /* @__PURE__ */ jsx("label", { style: { ...label, display: "block", marginTop: 12 }, children: guided.expected }),
+        /* @__PURE__ */ jsx("textarea", { value: expected, onChange: (e) => setExpected(e.target.value), rows: 2, placeholder: guided.expectedHint, style: { ...field, margin: "6px 0 0", resize: "vertical" } }),
+        /* @__PURE__ */ jsx("label", { style: { ...label, display: "block", marginTop: 12 }, children: "Anything else? (optional)" }),
+        /* @__PURE__ */ jsx("textarea", { value: details, onChange: (e) => setDetails(e.target.value), rows: 2, placeholder: "What you were doing when it happened, or anything else that helps.", style: { ...field, margin: "6px 0 0", resize: "vertical" } })
+      ] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsx("label", { style: label, children: "Your question" }),
+        /* @__PURE__ */ jsx("textarea", { value: details, onChange: (e) => setDetails(e.target.value), rows: 4, placeholder: "Ask it in your own words.", style: { ...field, margin: "6px 0 0", resize: "vertical" } })
+      ] }),
+      supabase && /* @__PURE__ */ jsxs(Fragment, { children: [
+        /* @__PURE__ */ jsxs("label", { style: { ...label, display: "block", marginTop: 14 }, children: [
+          "Screenshots (optional, up to ",
+          MAX_SCREENSHOTS,
+          ")"
+        ] }),
+        /* @__PURE__ */ jsx(
+          "input",
+          {
+            type: "file",
+            accept: "image/jpeg,image/png,image/webp",
+            multiple: true,
+            onChange: (e) => {
+              addFiles(e.target.files);
+              e.target.value = "";
+            },
+            disabled: shots.length >= MAX_SCREENSHOTS,
+            style: { ...field, margin: "6px 0 0", padding: "7px 8px", fontSize: 12, background: "#fff" }
+          }
+        ),
+        /* @__PURE__ */ jsx("div", { style: hint, children: "On a phone this opens the camera roll." }),
+        shots.length > 0 && /* @__PURE__ */ jsx("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, margin: "8px 0 0" }, children: shots.map((f, i) => /* @__PURE__ */ jsxs("div", { style: { position: "relative", width: 64, height: 64, borderRadius: 8, overflow: "hidden", border: "1px solid #e0e0d8" }, children: [
+          /* @__PURE__ */ jsx("img", { src: URL.createObjectURL(f), alt: f.name, style: { width: "100%", height: "100%", objectFit: "cover" } }),
+          /* @__PURE__ */ jsx(
+            "button",
+            {
+              onClick: () => removeShot(i),
+              title: "Remove " + f.name,
+              style: { position: "absolute", top: 2, right: 2, width: 18, height: 18, lineHeight: "16px", textAlign: "center", padding: 0, fontSize: 12, fontWeight: 700, color: "#fff", background: "rgba(0,0,0,0.6)", border: "none", borderRadius: 9, cursor: "pointer" },
+              children: "×"
+            }
+          )
+        ] }, i)) }),
+        shotErrors.length > 0 && /* @__PURE__ */ jsx("div", { style: { margin: "8px 0 0", padding: "8px 10px", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8 }, children: shotErrors.map((e, i) => /* @__PURE__ */ jsx("div", { style: { fontSize: 11, color: "#b91c1c", lineHeight: 1.4 }, children: e }, i)) })
+      ] }),
+      context.screen && /* @__PURE__ */ jsxs("div", { style: { fontSize: 11, color: "#94a3b8", margin: "12px 0 0" }, children: [
+        "Filed from ",
+        /* @__PURE__ */ jsx("strong", { style: { color: "#64748b" }, children: context.screen }),
+        " — captured automatically."
+      ] }),
+      /* @__PURE__ */ jsxs("div", { style: { display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 16 }, children: [
+        progress && /* @__PURE__ */ jsx("span", { style: { fontSize: 11, color: "#64748b", marginRight: "auto" }, children: progress }),
         /* @__PURE__ */ jsx("button", { onClick: onClose, style: { fontSize: 13, fontWeight: 600, color: "#64748b", background: "transparent", border: "1px solid #e0e0d8", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontFamily: F }, children: "Cancel" }),
         /* @__PURE__ */ jsx("button", { onClick: submit, disabled: saving, style: { fontSize: 13, fontWeight: 700, color: "#fff", background: accent, border: "none", borderRadius: 8, padding: "8px 18px", cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1, fontFamily: F }, children: saving ? "Sending…" : "Send request" })
       ] })
@@ -173,6 +347,7 @@ function GlobalCapture({ supabase, module = "portal", context, accent = ACCENT }
     openModal && /* @__PURE__ */ jsx(
       RequestModal,
       {
+        supabase,
         context: ctx,
         actions: [],
         accent,
@@ -186,9 +361,15 @@ export {
   ACCENT,
   F,
   GlobalCapture,
+  MAX_SCREENSHOTS,
+  MAX_SCREENSHOT_BYTES,
   REQUEST_KINDS,
   RequestModal,
+  SCREENSHOT_BUCKET,
   loadRequests,
   makeDescribe,
-  submitRequest
+  screenshotRejection,
+  screenshotUrls,
+  submitRequest,
+  uploadScreenshots
 };
