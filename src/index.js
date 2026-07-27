@@ -9,5 +9,11 @@
 
 export { default as GlobalCapture } from "./GlobalCapture";
 export { default as RequestModal } from "./RequestModal";
-export { loadRequests, submitRequest, makeDescribe, REQUEST_KINDS } from "./requestsApi";
+export {
+  loadRequests, submitRequest, makeDescribe, REQUEST_KINDS,
+  // Screenshot intake. screenshotUrls is what a triage surface needs: the bucket
+  // is private, so a stored path is not viewable without a signed URL.
+  uploadScreenshots, screenshotUrls, screenshotRejection,
+  SCREENSHOT_BUCKET, MAX_SCREENSHOTS, MAX_SCREENSHOT_BYTES,
+} from "./requestsApi";
 export { F, ACCENT } from "./theme";
