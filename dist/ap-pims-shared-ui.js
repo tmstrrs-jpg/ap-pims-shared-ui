@@ -1,5 +1,5 @@
 import { jsxs, Fragment, jsx } from "react/jsx-runtime";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 const F = "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif";
 const ACCENT = "#14202a";
 const REQUEST_KINDS = [
@@ -357,19 +357,323 @@ function GlobalCapture({ supabase, module = "portal", context, accent = ACCENT }
     )
   ] });
 }
+const PIMS_TOKENS = Object.freeze([
+  "font",
+  "bg-base",
+  "bg-image",
+  "bar",
+  "side",
+  "surface",
+  "surface-solid",
+  "field",
+  "sel",
+  "hover",
+  "ink",
+  "text-2",
+  "text-3",
+  "line",
+  "line-2",
+  "field-border",
+  "card-border",
+  "accent",
+  "accent-ink",
+  "primary-from",
+  "primary-to",
+  "primary",
+  "on-primary",
+  "primary-shadow",
+  "secondary-shadow",
+  "card-shadow",
+  "chip-on",
+  "chip-on-ink",
+  "info",
+  "info-soft",
+  "warn",
+  "warn-soft",
+  "danger",
+  "danger-soft",
+  "ok",
+  "ok-soft",
+  "r-btn",
+  "r-chip",
+  "r-field",
+  "r-card",
+  "r-row",
+  "h-btn",
+  "h-field",
+  "pad-btn",
+  "blur",
+  "focus-ring",
+  "press-scale",
+  "dur"
+]);
+const KNOWN = new Set(PIMS_TOKENS);
+const warned = /* @__PURE__ */ new Set();
+const isDev = () => {
+  try {
+    return process.env.NODE_ENV !== "production";
+  } catch {
+    return false;
+  }
+};
+function pv(name, classic) {
+  if (!KNOWN.has(name)) {
+    if (isDev()) throw new Error(`unknown pims token: ${name}`);
+    if (!warned.has(name)) {
+      warned.add(name);
+      console.warn(`unknown pims token: ${name}`);
+    }
+  }
+  const fb = typeof classic === "number" ? `${classic}px` : String(classic);
+  return `var(--pims-${name}, ${fb})`;
+}
+const UI_FEATURE = "ui_glass";
+const UI_ATTR = "data-pims-ui";
+const THEME_ATTR = "data-pims-theme";
+const LOOK_KEY = "pims.ui.look";
+const THEME_KEY = "pims.ui.theme";
+const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+function resolveAllowed({ role, features } = {}) {
+  if (Array.isArray(features)) {
+    if (features.includes(UI_FEATURE)) return true;
+    const row = features.find((f) => f && typeof f === "object" && f.feature_key === UI_FEATURE);
+    if (row) return (has(row, "enabled") ? row.enabled : row.allowed) === true;
+  } else if (features && typeof features === "object" && has(features, UI_FEATURE)) {
+    return features[UI_FEATURE] === true;
+  }
+  return role === "owner";
+}
+async function fetchUiAllowed(supabase, role) {
+  try {
+    const { data, error } = await supabase.rpc("fn_my_features_v1");
+    if (!error) return resolveAllowed({ role, features: data });
+    console.error("[ap-pims-shared-ui] fn_my_features_v1 failed; using the owner-only default", { role, error });
+  } catch (err) {
+    console.error("[ap-pims-shared-ui] fn_my_features_v1 threw; using the owner-only default", { role, err });
+  }
+  return role === "owner";
+}
+function previewOverride(loc = ((_a) => (_a = globalThis.window) == null ? void 0 : _a.location)()) {
+  if (!loc) return null;
+  const host = loc.hostname;
+  if (!(host === "localhost" || host === "127.0.0.1" || /^deploy-preview-\d+--/.test(host))) return null;
+  const v = new URLSearchParams(loc.search).get("ui");
+  return v === "glass" || v === "classic" ? v : null;
+}
+function resolveTheme(pref, prefersDark) {
+  if (pref === "light" || pref === "dark" || pref === "field") return pref;
+  return prefersDark ? "dark" : "light";
+}
+const META_COLOR = { light: "#F3F5F9", dark: "#0A0D14", field: "#FFFFFF" };
+function syncMeta(root, active, theme) {
+  var _a;
+  const meta = (_a = root.ownerDocument) == null ? void 0 : _a.querySelector('meta[name="theme-color"]');
+  if (!meta) return;
+  if (!meta.hasAttribute("data-classic")) meta.setAttribute("data-classic", meta.getAttribute("content") ?? "");
+  meta.setAttribute("content", active ? META_COLOR[theme] || META_COLOR.light : meta.getAttribute("data-classic"));
+}
+function applyUi({ active, theme }, root = ((_b) => (_b = globalThis.document) == null ? void 0 : _b.documentElement)()) {
+  if (!root) return;
+  if (active) {
+    root.setAttribute(UI_ATTR, "glass");
+    root.setAttribute(THEME_ATTR, theme);
+  } else {
+    root.removeAttribute(UI_ATTR);
+    root.removeAttribute(THEME_ATTR);
+  }
+  syncMeta(root, active, theme);
+}
+const EVENT = "pims:ui";
+const DARK_QUERY = "(prefers-color-scheme: dark)";
+const mem = {};
+function read(key, fallback) {
+  var _a;
+  if (key in mem) return mem[key] || fallback;
+  try {
+    return ((_a = globalThis.localStorage) == null ? void 0 : _a.getItem(key)) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+function write(key, value) {
+  var _a;
+  try {
+    (_a = globalThis.localStorage) == null ? void 0 : _a.setItem(key, value);
+    delete mem[key];
+  } catch {
+    mem[key] = value;
+  }
+}
+function osDark() {
+  var _a, _b;
+  try {
+    return !!((_b = (_a = globalThis.matchMedia) == null ? void 0 : _a.call(globalThis, DARK_QUERY)) == null ? void 0 : _b.matches);
+  } catch {
+    return false;
+  }
+}
+const consumers = /* @__PURE__ */ new Map();
+function applyAll(fallbackTheme) {
+  let on = null;
+  for (const s of consumers.values()) if (s.active) on = s;
+  applyUi(on || { active: false, theme: fallbackTheme });
+}
+function claim(owner, state) {
+  consumers.delete(owner);
+  consumers.set(owner, state);
+  applyAll(state.theme);
+}
+function release(owner) {
+  var _a;
+  const theme = (_a = consumers.get(owner)) == null ? void 0 : _a.theme;
+  consumers.delete(owner);
+  applyAll(theme);
+}
+const readLook = () => {
+  const v = read(LOOK_KEY, null);
+  return v === "glass" || v === "classic" ? v : null;
+};
+function usePimsUi({ allowed, themes = ["system", "light", "dark"] } = {}) {
+  const [initialOverride] = useState(() => previewOverride());
+  const [cleared, setCleared] = useState(false);
+  const override = cleared ? null : initialOverride;
+  const [stored, setLookState] = useState(readLook);
+  const look = override ?? stored ?? (allowed ? "glass" : "classic");
+  const [theme, setThemeState] = useState(() => read(THEME_KEY, "system"));
+  const [dark, setDark] = useState(osDark);
+  useEffect(() => {
+    var _a, _b;
+    const sync = () => {
+      setLookState(readLook());
+      setThemeState(read(THEME_KEY, "system"));
+    };
+    const onStorage = (e) => {
+      if (!e || e.key === null || e.key === LOOK_KEY || e.key === THEME_KEY) sync();
+    };
+    window.addEventListener(EVENT, sync);
+    window.addEventListener("storage", onStorage);
+    let mq = null;
+    const onMq = () => setDark(osDark());
+    try {
+      mq = ((_a = window.matchMedia) == null ? void 0 : _a.call(window, DARK_QUERY)) || null;
+      if (mq == null ? void 0 : mq.addEventListener) mq.addEventListener("change", onMq);
+      else (_b = mq == null ? void 0 : mq.addListener) == null ? void 0 : _b.call(mq, onMq);
+    } catch {
+      mq = null;
+    }
+    setDark(osDark());
+    return () => {
+      var _a2;
+      window.removeEventListener(EVENT, sync);
+      window.removeEventListener("storage", onStorage);
+      try {
+        if (mq == null ? void 0 : mq.removeEventListener) mq.removeEventListener("change", onMq);
+        else (_a2 = mq == null ? void 0 : mq.removeListener) == null ? void 0 : _a2.call(mq, onMq);
+      } catch {
+      }
+    };
+  }, []);
+  const active = override === "classic" ? false : (!!allowed || initialOverride !== null) && look === "glass";
+  const resolvedTheme = resolveTheme(theme, dark);
+  const [owner] = useState(() => ({}));
+  useEffect(() => {
+    claim(owner, { active, theme: resolvedTheme });
+    return () => release(owner);
+  }, [owner, active, resolvedTheme]);
+  const canChoose = !!allowed || initialOverride !== null;
+  const themeKey = themes.join("|");
+  const setLook = useCallback((v) => {
+    if (!canChoose) return;
+    setCleared(true);
+    write(LOOK_KEY, v === "glass" ? "glass" : "classic");
+    setLookState(v === "glass" ? "glass" : "classic");
+    window.dispatchEvent(new Event(EVENT));
+  }, [canChoose]);
+  const setTheme = useCallback((v) => {
+    if (v !== "system" && !themeKey.split("|").includes(v)) return;
+    write(THEME_KEY, v);
+    setThemeState(v);
+    window.dispatchEvent(new Event(EVENT));
+  }, [themeKey]);
+  return { active, look, theme, resolvedTheme, setLook, setTheme, canChoose, themes };
+}
+const LABELS = { classic: "Classic", glass: "Soft glass (new)", system: "System", light: "Light", dark: "Dark", field: "Field" };
+function coarsePointer() {
+  var _a, _b;
+  try {
+    return !!((_b = (_a = globalThis.matchMedia) == null ? void 0 : _a.call(globalThis, "(pointer: coarse)")) == null ? void 0 : _b.matches);
+  } catch {
+    return false;
+  }
+}
+function Segmented({ label, value, options, onChange }) {
+  const minHeight = coarsePointer() ? 44 : void 0;
+  return /* @__PURE__ */ jsxs("div", { role: "group", "aria-label": label, style: { marginBottom: 8 }, children: [
+    /* @__PURE__ */ jsx("div", { style: { fontSize: 11, fontWeight: 600, letterSpacing: ".04em", textTransform: "uppercase", color: pv("text-3", "#6b7280"), marginBottom: 4 }, children: label }),
+    /* @__PURE__ */ jsx("div", { style: { display: "flex", gap: 2, padding: 2, background: pv("line", "#e5e7eb"), borderRadius: pv("r-btn", "8px") }, children: options.map((o) => {
+      const on = value === o;
+      return /* @__PURE__ */ jsx(
+        "button",
+        {
+          type: "button",
+          "aria-pressed": on,
+          onClick: () => onChange(o),
+          style: {
+            flex: 1,
+            minHeight,
+            border: 0,
+            cursor: "pointer",
+            font: "inherit",
+            fontSize: 12,
+            padding: "5px 10px",
+            borderRadius: pv("r-btn", "8px"),
+            background: on ? pv("surface-solid", "#ffffff") : "transparent",
+            color: on ? pv("ink", "#111827") : pv("text-2", "#4b5563"),
+            fontWeight: on ? 600 : 500,
+            boxShadow: on ? pv("secondary-shadow", "0 1px 2px rgba(0,0,0,.12)") : "none"
+          },
+          children: LABELS[o] || o
+        },
+        o
+      );
+    }) })
+  ] });
+}
+function PimsLookMenu({ ui }) {
+  if (!ui || !ui.canChoose) return null;
+  const themes = ui.themes || ["system", "light", "dark"];
+  return /* @__PURE__ */ jsxs("div", { style: { minWidth: 220 }, children: [
+    /* @__PURE__ */ jsx(Segmented, { label: "Look", value: ui.look, options: ["classic", "glass"], onChange: ui.setLook }),
+    ui.look === "glass" && /* @__PURE__ */ jsx(Segmented, { label: "Theme", value: ui.theme, options: themes, onChange: ui.setTheme })
+  ] });
+}
 export {
   ACCENT,
   F,
   GlobalCapture,
+  LOOK_KEY,
   MAX_SCREENSHOTS,
   MAX_SCREENSHOT_BYTES,
+  PIMS_TOKENS,
+  PimsLookMenu,
   REQUEST_KINDS,
   RequestModal,
   SCREENSHOT_BUCKET,
+  THEME_ATTR,
+  THEME_KEY,
+  UI_ATTR,
+  UI_FEATURE,
+  applyUi,
+  fetchUiAllowed,
   loadRequests,
   makeDescribe,
+  previewOverride,
+  pv,
+  resolveAllowed,
+  resolveTheme,
   screenshotRejection,
   screenshotUrls,
   submitRequest,
-  uploadScreenshots
+  uploadScreenshots,
+  usePimsUi
 };
