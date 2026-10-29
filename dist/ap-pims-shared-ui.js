@@ -529,13 +529,14 @@ function release(owner) {
   consumers.delete(owner);
   applyAll(theme);
 }
+let previewCleared = false;
 const readLook = () => {
   const v = read(LOOK_KEY, null);
   return v === "glass" || v === "classic" ? v : null;
 };
 function usePimsUi({ allowed, themes = ["system", "light", "dark"] } = {}) {
   const [initialOverride] = useState(() => previewOverride());
-  const [cleared, setCleared] = useState(false);
+  const [cleared, setCleared] = useState(() => previewCleared);
   const override = cleared ? null : initialOverride;
   const [stored, setLookState] = useState(readLook);
   const look = override ?? stored ?? (allowed ? "glass" : "classic");
@@ -544,6 +545,7 @@ function usePimsUi({ allowed, themes = ["system", "light", "dark"] } = {}) {
   useEffect(() => {
     var _a, _b;
     const sync = () => {
+      if (previewCleared) setCleared(true);
       setLookState(readLook());
       setThemeState(read(THEME_KEY, "system"));
     };
@@ -584,6 +586,7 @@ function usePimsUi({ allowed, themes = ["system", "light", "dark"] } = {}) {
   const themeKey = themes.join("|");
   const setLook = useCallback((v) => {
     if (!canChoose) return;
+    previewCleared = true;
     setCleared(true);
     write(LOOK_KEY, v === "glass" ? "glass" : "classic");
     setLookState(v === "glass" ? "glass" : "classic");

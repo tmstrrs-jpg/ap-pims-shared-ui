@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { StrictMode } from 'react'
 import { renderHook, act, render, screen, cleanup } from '@testing-library/react'
-import { usePimsUi } from '../theme/usePimsUi.js'
+import { usePimsUi, __resetPreviewForTests } from '../theme/usePimsUi.js'
 import { PimsLookMenu } from '../theme/PimsLookMenu.jsx'
 
 const root = document.documentElement
@@ -19,7 +19,7 @@ const flipOs = (v) => { dark = v; act(() => { listeners.forEach((fn) => fn({ mat
 const setUrl = (url) => window.history.pushState({}, '', url)
 const setHost = (host, qs) => { const real = window.location; Object.defineProperty(window, 'location', { configurable: true, value: { ...real, hostname: host, search: qs } }) }
 let realLocation
-beforeEach(() => { realLocation = window.location; setUrl('/'); localStorage.clear(); root.removeAttribute('data-pims-ui'); root.removeAttribute('data-pims-theme'); stubMatchMedia() })
+beforeEach(() => { __resetPreviewForTests(); realLocation = window.location; setUrl('/'); localStorage.clear(); root.removeAttribute('data-pims-ui'); root.removeAttribute('data-pims-theme'); stubMatchMedia() })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); if (window.location !== realLocation) Object.defineProperty(window, 'location', { configurable: true, value: realLocation }); setUrl('/') })
 
 describe('usePimsUi', () => {
@@ -244,6 +244,38 @@ describe('preview override in the hook', () => {
     setUrl('/?view=x')
     act(() => { window.dispatchEvent(new Event('pims:ui')) })
     expect(result.current.active).toBe(true)
+  })
+  it('two consumers on ?ui=glass: Classic in one turns glass off for both', () => {
+    setUrl('/?ui=glass')
+    const a = renderHook(() => usePimsUi({ allowed: false }))
+    const b = renderHook(() => usePimsUi({ allowed: false }))
+    expect(root.getAttribute('data-pims-ui')).toBe('glass')
+    act(() => a.result.current.setLook('classic'))
+    expect(a.result.current.active).toBe(false)
+    expect(b.result.current.look).toBe('classic')
+    expect(b.result.current.active).toBe(false)
+    expect(root.hasAttribute('data-pims-ui')).toBe(false)
+    act(() => b.result.current.setLook('glass'))
+    expect(a.result.current.active).toBe(true)
+    expect(root.getAttribute('data-pims-ui')).toBe('glass')
+  })
+  it('on ?ui=glass, a consumer that mounts after Classic was chosen stays classic', () => {
+    setUrl('/?ui=glass')
+    const a = renderHook(() => usePimsUi({ allowed: false }))
+    act(() => a.result.current.setLook('classic'))
+    const late = renderHook(() => usePimsUi({ allowed: false }))
+    expect(late.result.current.active).toBe(false)
+    expect(late.result.current.canChoose).toBe(true)
+    expect(root.hasAttribute('data-pims-ui')).toBe(false)
+  })
+  it('on ?ui=glass, a theme change in one consumer does not drop the preview in the other', () => {
+    setUrl('/?ui=glass')
+    const a = renderHook(() => usePimsUi({ allowed: false }))
+    const b = renderHook(() => usePimsUi({ allowed: false }))
+    act(() => a.result.current.setTheme('dark'))
+    expect(b.result.current.active).toBe(true)
+    expect(root.getAttribute('data-pims-ui')).toBe('glass')
+    expect(root.getAttribute('data-pims-theme')).toBe('dark')
   })
   it('?ui=classic forces off even when stored as glass', () => {
     localStorage.setItem('pims.ui.look', 'glass')
