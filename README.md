@@ -103,3 +103,23 @@ An opt-in look. With the flag off nothing changes: every `--pims-*` variable exi
 Run `npm test` for the token scoping and WCAG contrast checks.
 
 Default look: when `allowed` is true and the user has not chosen, the look is Soft glass; a stored choice (including Classic) wins. When `allowed` is false the look is always Classic. The `ui_glass` feature is the release and rollback switch.
+
+## Workspace shell (v0.4, W1 + W6a)
+
+The workspace frame from the PM Portal (W1) now lives here, so the portal and the DJR app share one shell instead
+of copying it (W6 Part 0.2). Copied from `ap-pims-pm-portal` `src/workspace/` at `ece372b7`; the only changes are an
+inline close icon (no `lucide-react` dependency) and the stylesheet being a separate import.
+
+```js
+import { Shell, Paper, Sheet, StatusLine, usePaperDesk } from 'ap-pims-shared-ui';
+import 'ap-pims-shared-ui/workspace.css';
+```
+
+- `Shell`: four bars (Index, Dashboard, This job, Mine), one panel open at a time, Esc closes, focus returns to the bar.
+- `Paper`: a static full-width sheet of paper for the phone (no dragging).
+- `Sheet`: a bottom sheet (Esc, tap outside or Close; Tab stays inside; focus returns to the opener; 44 px targets).
+- `StatusLine`: one sentence in words with optional actions (`tone`: `calm`, `waiting`, `problem`).
+- Tokens (`WS`, `BARS`, ...), `shellStyle`, `usePaperDesk` / `deskReducer` (at most two papers open), `wordDelay`.
+
+Nothing in the apps uses this package copy yet: the DJR app vendors it (`src/vendor/pims-ui/workspace/`) for W6a,
+and the portal keeps its own `src/workspace/` until a separate change re-points it. No tag is cut for 0.4.0-rc.1.

@@ -1,5 +1,5 @@
 import { jsxs, Fragment, jsx } from "react/jsx-runtime";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useId, useRef, useReducer } from "react";
 const F = "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif";
 const ACCENT = "#14202a";
 const REQUEST_KINDS = [
@@ -650,33 +650,337 @@ function PimsLookMenu({ ui }) {
     ui.look === "glass" && /* @__PURE__ */ jsx(Segmented, { label: "Theme", value: ui.theme, options: themes, onChange: ui.setTheme })
   ] });
 }
+const hex = (rgb) => `#${rgb}`;
+const WS = Object.freeze({
+  table: hex("1F2226"),
+  // the near-black ground
+  tableLift: hex("262A2F"),
+  // a card or chip resting on the table
+  ink: hex("ECEBE6"),
+  // text on the table
+  inkSoft: hex("B9B8B2"),
+  // secondary text on the table (8.0:1)
+  inkFaint: hex("9A9993"),
+  // tertiary text and placeholders (5.6:1 on the table, 5.0:1 on a chip)
+  paper: hex("E8E8E3"),
+  // a sheet of paper
+  paperInk: hex("1E2023"),
+  // text on paper
+  paperInkSoft: hex("4A4C50"),
+  // secondary text on paper (7.0:1 on paper)
+  paperRule: hex("CFCFC8"),
+  // hairlines on paper
+  warn: hex("E3B341"),
+  // the unset-clock warning on the table
+  warnInk: hex("2A2108"),
+  late: hex("E5806B"),
+  focus: hex("E8E8E3")
+});
+const BARS = Object.freeze({
+  left: { key: "index", label: "Index", color: hex("7A3E3B"), panel: hex("2C1817") },
+  top: { key: "dashboard", label: "Dashboard", color: hex("9A8546"), panel: hex("2B2716") },
+  right: { key: "job", label: "This job", color: hex("3F5A75"), panel: hex("16212C") },
+  bottom: { key: "mine", label: "Mine", color: hex("4F6E52"), panel: hex("18241A") }
+});
+const BAR = Object.freeze({ thick: 14, hover: 24, share: 0.25, hoverMs: 250 });
+const EASE_PANEL = "cubic-bezier(.2,.8,.2,1)";
+const PANEL_MS = 450;
+const WORD_MS_MIN = 85;
+const WORD_MS_MAX = 110;
+const SERIF = "'Newsreader', 'Iowan Old Style', Georgia, serif";
+const SANS = "'Inter', -apple-system, 'Segoe UI', sans-serif";
+const FONT_HREF = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400&display=swap";
+const MAX_OPEN_PAPERS = 2;
+function useWorkspaceFonts() {
+  useEffect(() => {
+    if (typeof document === "undefined" || document.querySelector("link[data-ws-fonts]")) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = FONT_HREF;
+    link.dataset.wsFonts = "";
+    document.head.appendChild(link);
+  }, []);
+}
+const shellStyle = Object.freeze({
+  "--ws-table": WS.table,
+  "--ws-lift": WS.tableLift,
+  "--ws-ink": WS.ink,
+  "--ws-ink-soft": WS.inkSoft,
+  "--ws-ink-faint": WS.inkFaint,
+  "--ws-paper": WS.paper,
+  "--ws-paper-ink": WS.paperInk,
+  "--ws-paper-ink-soft": WS.paperInkSoft,
+  "--ws-paper-rule": WS.paperRule,
+  "--ws-warn": WS.warn,
+  "--ws-warn-ink": WS.warnInk,
+  "--ws-late": WS.late,
+  "--ws-focus": WS.focus,
+  "--ws-serif": SERIF,
+  "--ws-sans": SANS,
+  "--ws-ease": EASE_PANEL,
+  "--ws-panel-ms": `${PANEL_MS}ms`,
+  "--ws-bar-ms": `${BAR.hoverMs}ms`
+});
+const EDGES = ["left", "top", "right", "bottom"];
+function CloseIcon({ size = 16 }) {
+  return /* @__PURE__ */ jsxs("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true", focusable: "false", children: [
+    /* @__PURE__ */ jsx("path", { d: "M18 6 6 18" }),
+    /* @__PURE__ */ jsx("path", { d: "m6 6 12 12" })
+  ] });
+}
+function Shell({ panels = {}, children, chatLine = null, label = "Workspace" }) {
+  useWorkspaceFonts();
+  const [open, setOpen] = useState(null);
+  const baseId = useId();
+  const close = useCallback(() => {
+    setOpen((was) => {
+      if (was) setTimeout(() => {
+        var _a;
+        return (_a = document.getElementById(`${baseId}-bar-${was}`)) == null ? void 0 : _a.focus();
+      }, 0);
+      return null;
+    });
+  }, [baseId]);
+  useEffect(() => {
+    if (!open) return void 0;
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, close]);
+  return /* @__PURE__ */ jsxs("div", { className: "ws-root", style: shellStyle, "data-ws-root": "", "data-panel-open": open || "none", "aria-label": label, children: [
+    /* @__PURE__ */ jsx("main", { className: "ws-stage", onPointerDown: open ? close : void 0, "data-scroll-root": "", children }),
+    EDGES.map((edge) => {
+      const bar = BARS[edge];
+      const id = `${baseId}-${bar.key}`;
+      const isOpen = open === edge;
+      const body = typeof panels[bar.key] === "function" ? panels[bar.key]({ close }) : panels[bar.key];
+      return /* @__PURE__ */ jsxs("div", { children: [
+        /* @__PURE__ */ jsx(
+          "button",
+          {
+            id: `${baseId}-bar-${edge}`,
+            type: "button",
+            className: "ws-bar",
+            "data-edge": edge,
+            "data-testid": `ws-bar-${bar.key}`,
+            style: { "--bar": bar.color },
+            "aria-label": bar.label,
+            "aria-expanded": isOpen,
+            "aria-controls": id,
+            onClick: () => setOpen((o) => o === edge ? null : edge)
+          }
+        ),
+        /* @__PURE__ */ jsxs(
+          "section",
+          {
+            id,
+            className: "ws-panel",
+            "data-edge": edge,
+            "data-open": isOpen,
+            "data-testid": `ws-panel-${bar.key}`,
+            style: { "--panel": bar.panel },
+            "aria-label": bar.label,
+            "aria-hidden": !isOpen,
+            inert: !isOpen,
+            children: [
+              /* @__PURE__ */ jsx("button", { type: "button", className: "ws-panel-close", onClick: close, "aria-label": `Close ${bar.label}`, children: /* @__PURE__ */ jsx(CloseIcon, {}) }),
+              /* @__PURE__ */ jsx("h2", { children: bar.label }),
+              body
+            ]
+          }
+        )
+      ] }, edge);
+    }),
+    chatLine
+  ] });
+}
+function Paper({ title, children, className = "", testId }) {
+  const id = useId();
+  return /* @__PURE__ */ jsxs("article", { className: `ws-paper ws-paper-phone ${className}`.trim(), "aria-labelledby": `${id}-t`, "data-testid": testId, children: [
+    /* @__PURE__ */ jsx("h1", { id: `${id}-t`, children: title }),
+    children
+  ] });
+}
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const EXIT_MS = 160;
+function Sheet({ open, onClose, title, children, closeLabel = "Close", testId = "ws-bottom-sheet" }) {
+  const id = useId();
+  const panel = useRef(null);
+  const opener = useRef(null);
+  const [mounted, setMounted] = useState(open);
+  const [closing, setClosing] = useState(false);
+  useEffect(() => {
+    var _a;
+    if (open) {
+      opener.current = typeof document !== "undefined" ? document.activeElement : null;
+      setClosing(false);
+      setMounted(true);
+      return void 0;
+    }
+    if (!mounted) return void 0;
+    setClosing(true);
+    const reduce = typeof window !== "undefined" && ((_a = window.matchMedia) == null ? void 0 : _a.call(window, "(prefers-reduced-motion: reduce)").matches) === true;
+    const t = setTimeout(() => {
+      setMounted(false);
+      setClosing(false);
+      const back = opener.current;
+      opener.current = null;
+      if (back && typeof back.focus === "function" && back.isConnected) back.focus();
+    }, reduce ? 0 : EXIT_MS);
+    return () => clearTimeout(t);
+  }, [open]);
+  useEffect(() => {
+    var _a, _b;
+    if (!mounted || closing) return;
+    const first = (_a = panel.current) == null ? void 0 : _a.querySelector(FOCUSABLE);
+    (_b = first || panel.current) == null ? void 0 : _b.focus();
+  }, [mounted, closing]);
+  const onKeyDown = useCallback((e) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      onClose == null ? void 0 : onClose();
+      return;
+    }
+    if (e.key !== "Tab" || !panel.current) return;
+    const items = [...panel.current.querySelectorAll(FOCUSABLE)];
+    if (!items.length) {
+      e.preventDefault();
+      return;
+    }
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }, [onClose]);
+  if (!mounted) return null;
+  return /* @__PURE__ */ jsxs("div", { className: "ws-bsheet-layer", style: shellStyle, "data-closing": closing || void 0, "data-testid": testId, children: [
+    /* @__PURE__ */ jsx("div", { className: "ws-bsheet-scrim", onClick: () => onClose == null ? void 0 : onClose(), "aria-hidden": "true" }),
+    /* @__PURE__ */ jsxs("div", { ref: panel, className: "ws-bsheet", role: "dialog", "aria-modal": "true", "aria-labelledby": `${id}-t`, tabIndex: -1, onKeyDown, children: [
+      /* @__PURE__ */ jsxs("div", { className: "ws-bsheet-head", children: [
+        /* @__PURE__ */ jsx("h2", { id: `${id}-t`, children: title }),
+        /* @__PURE__ */ jsx("button", { type: "button", className: "ws-bsheet-close", onClick: () => onClose == null ? void 0 : onClose(), "aria-label": closeLabel, children: /* @__PURE__ */ jsx(CloseIcon, { size: 18 }) })
+      ] }),
+      /* @__PURE__ */ jsx("div", { className: "ws-bsheet-body", children })
+    ] })
+  ] });
+}
+function StatusLine({ text, tone = "calm", actions = [], busy = false, testId = "ws-status" }) {
+  if (!text) return null;
+  return /* @__PURE__ */ jsxs("div", { className: "ws-status", "data-tone": tone, "data-busy": busy || void 0, "data-testid": testId, children: [
+    /* @__PURE__ */ jsx("p", { className: "ws-status-text", role: "status", "aria-live": "polite", children: text }),
+    actions.length > 0 && /* @__PURE__ */ jsx("div", { className: "ws-status-actions", children: actions.map((a) => /* @__PURE__ */ jsx(
+      "button",
+      {
+        type: "button",
+        className: "ws-status-btn",
+        "data-primary": a.primary || void 0,
+        disabled: a.disabled || busy,
+        onClick: a.onClick,
+        "aria-label": a.ariaLabel || void 0,
+        children: a.label
+      },
+      a.key || a.id
+    )) })
+  ] });
+}
+const emptyDesk = Object.freeze({ open: [], away: null, why: {} });
+function deskReducer(state, action) {
+  switch (action.type) {
+    case "open": {
+      if (!action.id || state.open.includes(action.id)) return action.why ? { ...state, why: { ...state.why, [action.id]: action.why } } : state;
+      const open = [...state.open.filter((id) => id !== action.id), action.id];
+      while (open.length > MAX_OPEN_PAPERS) open.shift();
+      return { ...state, open, away: state.away === action.id ? null : state.away, why: action.why ? { ...state.why, [action.id]: action.why } : state.why };
+    }
+    case "putBack":
+      return { ...state, open: state.open.filter((id) => id !== action.id) };
+    case "away":
+      return { ...state, open: state.open.filter((id) => id !== action.id), away: action.id };
+    case "returned":
+      return state.away === action.id || action.id == null ? { ...state, away: null } : state;
+    case "reset":
+      return emptyDesk;
+    default:
+      return state;
+  }
+}
+function usePaperDesk(papers) {
+  const [desk, dispatch] = useReducer(deskReducer, emptyDesk);
+  const showPaper = useCallback((id, why) => {
+    if (!papers.some((p) => p.id === id)) return false;
+    dispatch({ type: "open", id, why });
+    return true;
+  }, [papers]);
+  return { desk, dispatch, showPaper };
+}
+function prefersReducedMotion() {
+  var _a;
+  try {
+    return typeof window !== "undefined" && ((_a = window.matchMedia) == null ? void 0 : _a.call(window, "(prefers-reduced-motion: reduce)").matches) === true;
+  } catch {
+    return false;
+  }
+}
+const wordDelay = (i) => WORD_MS_MIN + i * 7 % (WORD_MS_MAX - WORD_MS_MIN + 1);
 export {
   ACCENT,
+  BAR,
+  BARS,
+  CloseIcon,
+  EASE_PANEL,
   F,
+  FONT_HREF,
   GlobalCapture,
   LOOK_KEY,
+  MAX_OPEN_PAPERS,
   MAX_SCREENSHOTS,
   MAX_SCREENSHOT_BYTES,
+  PANEL_MS,
   PIMS_TOKENS,
+  Paper,
   PimsLookMenu,
   REQUEST_KINDS,
   RequestModal,
+  SANS,
   SCREENSHOT_BUCKET,
+  SERIF,
+  Sheet,
+  Shell,
+  StatusLine,
   THEME_ATTR,
   THEME_KEY,
   UI_ATTR,
   UI_FEATURE,
+  WORD_MS_MAX,
+  WORD_MS_MIN,
+  WS,
   applyUi,
+  deskReducer,
+  emptyDesk,
   fetchUiAllowed,
   loadRequests,
   makeDescribe,
+  prefersReducedMotion,
   previewOverride,
   pv,
   resolveAllowed,
   resolveTheme,
   screenshotRejection,
   screenshotUrls,
+  shellStyle,
   submitRequest,
   uploadScreenshots,
-  usePimsUi
+  usePaperDesk,
+  usePimsUi,
+  useWorkspaceFonts,
+  wordDelay
 };
