@@ -685,6 +685,7 @@ const BARS = Object.freeze({
 const BAR = Object.freeze({ thick: 14, hover: 24, share: 0.25, hoverMs: 250 });
 const EASE_PANEL = "cubic-bezier(.2,.8,.2,1)";
 const PANEL_MS = 450;
+const PANEL_MS_PHONE = 260;
 const WORD_MS_MIN = 85;
 const WORD_MS_MAX = 110;
 const SERIF = "'Newsreader', 'Iowan Old Style', Georgia, serif";
@@ -728,19 +729,32 @@ function CloseIcon({ size = 16 }) {
     /* @__PURE__ */ jsx("path", { d: "m6 6 12 12" })
   ] });
 }
-function Shell({ panels = {}, children, chatLine = null, label = "Workspace" }) {
+function Shell({ panels = {}, children, chatLine = null, label = "Workspace", edges = EDGES, variant }) {
   useWorkspaceFonts();
   const [open, setOpen] = useState(null);
   const baseId = useId();
+  const opener = useRef(null);
   const close = useCallback(() => {
     setOpen((was) => {
-      if (was) setTimeout(() => {
-        var _a;
-        return (_a = document.getElementById(`${baseId}-bar-${was}`)) == null ? void 0 : _a.focus();
-      }, 0);
+      if (was) {
+        const back = opener.current;
+        opener.current = null;
+        setTimeout(() => {
+          var _a;
+          return (_a = (back == null ? void 0 : back.isConnected) ? back : document.getElementById(`${baseId}-bar-${was}`)) == null ? void 0 : _a.focus();
+        }, 0);
+      }
       return null;
     });
   }, [baseId]);
+  const openPanel = useCallback((key) => {
+    const edge = EDGES.find((e) => BARS[e].key === key);
+    if (!edge) return;
+    opener.current = typeof document !== "undefined" ? document.activeElement : null;
+    setOpen(edge);
+  }, []);
+  const phone = variant === "phone";
+  const style = phone ? { ...shellStyle, "--ws-panel-ms": `${PANEL_MS_PHONE}ms` } : shellStyle;
   useEffect(() => {
     if (!open) return void 0;
     const onKey = (e) => {
@@ -752,9 +766,9 @@ function Shell({ panels = {}, children, chatLine = null, label = "Workspace" }) 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
-  return /* @__PURE__ */ jsxs("div", { className: "ws-root", style: shellStyle, "data-ws-root": "", "data-panel-open": open || "none", "aria-label": label, children: [
-    /* @__PURE__ */ jsx("main", { className: "ws-stage", onPointerDown: open ? close : void 0, "data-scroll-root": "", children }),
-    EDGES.map((edge) => {
+  return /* @__PURE__ */ jsxs("div", { className: "ws-root", style, "data-ws-root": "", "data-variant": variant || void 0, "data-panel-open": open || "none", "aria-label": label, children: [
+    /* @__PURE__ */ jsx("main", { className: "ws-stage", onPointerDown: open ? close : void 0, "data-scroll-root": "", tabIndex: phone ? -1 : void 0, children: typeof children === "function" ? children({ openPanel }) : children }),
+    EDGES.filter((edge) => edges.includes(edge)).map((edge) => {
       const bar = BARS[edge];
       const id = `${baseId}-${bar.key}`;
       const isOpen = open === edge;
@@ -772,7 +786,10 @@ function Shell({ panels = {}, children, chatLine = null, label = "Workspace" }) 
             "aria-label": bar.label,
             "aria-expanded": isOpen,
             "aria-controls": id,
-            onClick: () => setOpen((o) => o === edge ? null : edge)
+            onClick: () => {
+              opener.current = null;
+              setOpen((o) => o === edge ? null : edge);
+            }
           }
         ),
         /* @__PURE__ */ jsxs(
@@ -808,6 +825,9 @@ function Paper({ title, children, className = "", testId }) {
 }
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const EXIT_MS = 160;
+const DISMISS_VELOCITY = 0.11;
+const DISMISS_DISTANCE = 120;
+const PREFERRED = '[data-autofocus], [aria-current="true"], [aria-current="page"]';
 function Sheet({ open, onClose, title, children, closeLabel = "Close", testId = "ws-bottom-sheet" }) {
   const id = useId();
   const panel = useRef(null);
@@ -835,11 +855,43 @@ function Sheet({ open, onClose, title, children, closeLabel = "Close", testId = 
     return () => clearTimeout(t);
   }, [open]);
   useEffect(() => {
-    var _a, _b;
+    var _a, _b, _c;
     if (!mounted || closing) return;
-    const first = (_a = panel.current) == null ? void 0 : _a.querySelector(FOCUSABLE);
-    (_b = first || panel.current) == null ? void 0 : _b.focus();
+    const preferred = (_a = panel.current) == null ? void 0 : _a.querySelector(PREFERRED);
+    const first = (_b = panel.current) == null ? void 0 : _b.querySelector(FOCUSABLE);
+    (_c = preferred && preferred.matches(FOCUSABLE) ? preferred : first || panel.current) == null ? void 0 : _c.focus();
   }, [mounted, closing]);
+  const drag = useRef(null);
+  const onDragStart = useCallback((e) => {
+    var _a, _b, _c, _d;
+    if (drag.current || e.button > 0 || ((_b = (_a = e.target).closest) == null ? void 0 : _b.call(_a, "button"))) return;
+    drag.current = { id: e.pointerId, y: e.clientY, t: performance.now(), dy: 0 };
+    (_d = (_c = e.currentTarget).setPointerCapture) == null ? void 0 : _d.call(_c, e.pointerId);
+    if (panel.current) panel.current.style.transition = "none";
+  }, []);
+  const onDragMove = useCallback((e) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId || !panel.current) return;
+    const raw = e.clientY - d.y;
+    d.dy = raw >= 0 ? raw : -Math.sqrt(-raw) * 2;
+    panel.current.style.transform = `translateY(${d.dy}px)`;
+  }, []);
+  const onDragEnd = useCallback((e) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    drag.current = null;
+    const el = panel.current;
+    if (!el) return;
+    const velocity = d.dy / Math.max(1, performance.now() - d.t);
+    if (e.type !== "pointercancel" && (d.dy >= DISMISS_DISTANCE || d.dy > 8 && velocity > DISMISS_VELOCITY)) {
+      el.style.transition = `transform ${EXIT_MS}ms cubic-bezier(0.23, 1, 0.32, 1)`;
+      el.style.transform = "translateY(100%)";
+      onClose == null ? void 0 : onClose();
+    } else {
+      el.style.transition = "";
+      el.style.transform = "";
+    }
+  }, [onClose]);
   const onKeyDown = useCallback((e) => {
     if (e.key === "Escape") {
       e.stopPropagation();
@@ -865,9 +917,12 @@ function Sheet({ open, onClose, title, children, closeLabel = "Close", testId = 
   return /* @__PURE__ */ jsxs("div", { className: "ws-bsheet-layer", style: shellStyle, "data-closing": closing || void 0, "data-testid": testId, children: [
     /* @__PURE__ */ jsx("div", { className: "ws-bsheet-scrim", onClick: () => onClose == null ? void 0 : onClose(), "aria-hidden": "true" }),
     /* @__PURE__ */ jsxs("div", { ref: panel, className: "ws-bsheet", role: "dialog", "aria-modal": "true", "aria-labelledby": `${id}-t`, tabIndex: -1, onKeyDown, children: [
-      /* @__PURE__ */ jsxs("div", { className: "ws-bsheet-head", children: [
-        /* @__PURE__ */ jsx("h2", { id: `${id}-t`, children: title }),
-        /* @__PURE__ */ jsx("button", { type: "button", className: "ws-bsheet-close", onClick: () => onClose == null ? void 0 : onClose(), "aria-label": closeLabel, children: /* @__PURE__ */ jsx(CloseIcon, { size: 18 }) })
+      /* @__PURE__ */ jsxs("div", { className: "ws-bsheet-grip", "data-testid": `${testId}-grip`, onPointerDown: onDragStart, onPointerMove: onDragMove, onPointerUp: onDragEnd, onPointerCancel: onDragEnd, children: [
+        /* @__PURE__ */ jsx("span", { className: "ws-bsheet-handle", "aria-hidden": "true" }),
+        /* @__PURE__ */ jsxs("div", { className: "ws-bsheet-head", children: [
+          /* @__PURE__ */ jsx("h2", { id: `${id}-t`, children: title }),
+          /* @__PURE__ */ jsx("button", { type: "button", className: "ws-bsheet-close", onClick: () => onClose == null ? void 0 : onClose(), "aria-label": closeLabel, children: /* @__PURE__ */ jsx(CloseIcon, { size: 18 }) })
+        ] })
       ] }),
       /* @__PURE__ */ jsx("div", { className: "ws-bsheet-body", children })
     ] })
@@ -945,6 +1000,7 @@ export {
   MAX_SCREENSHOTS,
   MAX_SCREENSHOT_BYTES,
   PANEL_MS,
+  PANEL_MS_PHONE,
   PIMS_TOKENS,
   Paper,
   PimsLookMenu,

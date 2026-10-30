@@ -116,10 +116,14 @@ import 'ap-pims-shared-ui/workspace.css';
 ```
 
 - `Shell`: four bars (Index, Dashboard, This job, Mine), one panel open at a time, Esc closes, focus returns to the bar.
+  Optional (0.4.0-rc.2, W6a UX fixes): `edges` (which bars to show), `variant="phone"` (safe-area insets, 44 px bar
+  hit areas, stage out of the Tab order, panels in 260 ms) and `children` as a function of `{ openPanel(key) }` so a
+  labelled button can open a panel. Without them the shell is unchanged.
 - `Paper`: a static full-width sheet of paper for the phone (no dragging).
-- `Sheet`: a bottom sheet (Esc, tap outside or Close; Tab stays inside; focus returns to the opener; 44 px targets).
+- `Sheet`: a bottom sheet (Esc, tap outside or Close; Tab stays inside; focus returns to the opener; 44 px targets;
+  a grab handle with drag-to-dismiss; opens with focus on the `aria-current` row).
 - `StatusLine`: one sentence in words with optional actions (`tone`: `calm`, `waiting`, `problem`).
 - Tokens (`WS`, `BARS`, ...), `shellStyle`, `usePaperDesk` / `deskReducer` (at most two papers open), `wordDelay`.
 
 Nothing in the apps uses this package copy yet: the DJR app vendors it (`src/vendor/pims-ui/workspace/`) for W6a,
-and the portal keeps its own `src/workspace/` until a separate change re-points it. No tag is cut for 0.4.0-rc.1.
+and the portal keeps its own `src/workspace/` until a separate change re-points it. No tag is cut for 0.4.0-rc.1 or rc.2.
