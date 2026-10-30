@@ -25,6 +25,17 @@
   .ws-bar[data-edge="left"]:hover, .ws-bar[data-edge="right"]:hover { width: 24px; filter: brightness(1.25); }
   .ws-bar[data-edge="top"]:hover, .ws-bar[data-edge="bottom"]:hover { height: 24px; filter: brightness(1.25); }
 }
+/* W8b · a count beside a bar (Shell `counts`): the Mine bar's unread Team Chat messages. Sits just off the bar on
+   the table side, never covers it, never takes a tap. */
+.ws-bar-count {
+  position: absolute; z-index: 41; pointer-events: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center; background: var(--ws-paper); color: var(--ws-paper-ink);
+  font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45);
+}
+.ws-bar-count[data-edge="bottom"] { bottom: 30px; left: 50%; transform: translateX(-50%); }
+.ws-bar-count[data-edge="top"]    { top: 30px; left: 50%; transform: translateX(-50%); }
+.ws-bar-count[data-edge="left"]   { left: 30px; top: 50%; transform: translateY(-50%); }
+.ws-bar-count[data-edge="right"]  { right: 30px; top: 50%; transform: translateY(-50%); }
 .ws-bar[aria-expanded="true"] { filter: brightness(1.25); }
 .ws-bar[data-edge="left"][aria-expanded="true"], .ws-bar[data-edge="right"][aria-expanded="true"] { width: 24px; }
 .ws-bar[data-edge="top"][aria-expanded="true"], .ws-bar[data-edge="bottom"][aria-expanded="true"] { height: 24px; }

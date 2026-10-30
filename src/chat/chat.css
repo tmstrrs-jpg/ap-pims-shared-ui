@@ -1,0 +1,22 @@
+/* W8b · Team Chat room list in the workspace's Mine panel (PM Portal and DJR phone), and the count beside a bar.
+   Workspace tokens only (--ws-*, set on .ws-root by the shell). Rows are opened many times a day, so the only
+   motion is the press. */
+.ws-chat-note { margin: 0; font-size: 14px; color: var(--ws-ink-soft); }
+.ws-chat-rooms { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.ws-chat-room {
+  width: 100%; min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  border: 0; background: transparent; color: var(--ws-ink); text-align: left; cursor: pointer;
+  padding: 8px 10px; border-radius: 8px; font: inherit; font-size: 14px;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1), background-color 140ms ease;
+}
+@media (hover: hover) and (pointer: fine) { .ws-chat-room:hover { background: rgba(255, 255, 255, 0.07); } }
+.ws-chat-room:active { transform: scale(0.98); }
+.ws-chat-room-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-chat-room[data-unread="true"] .ws-chat-room-name { font-weight: 600; }
+.ws-chat-unread {
+  flex: 0 0 auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 11px; display: inline-flex;
+  align-items: center; justify-content: center; background: var(--ws-paper); color: var(--ws-paper-ink);
+  font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.ws-chat-more { margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) { .ws-chat-room { transition-duration: 0s !important; } }

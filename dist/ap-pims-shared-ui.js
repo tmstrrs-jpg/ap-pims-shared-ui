@@ -728,7 +728,7 @@ function CloseIcon({ size = 16 }) {
     /* @__PURE__ */ jsx("path", { d: "m6 6 12 12" })
   ] });
 }
-function Shell({ panels = {}, children, chatLine = null, label = "Workspace" }) {
+function Shell({ panels = {}, children, chatLine = null, label = "Workspace", counts = null }) {
   useWorkspaceFonts();
   const [open, setOpen] = useState(null);
   const baseId = useId();
@@ -759,6 +759,8 @@ function Shell({ panels = {}, children, chatLine = null, label = "Workspace" }) 
       const id = `${baseId}-${bar.key}`;
       const isOpen = open === edge;
       const body = typeof panels[bar.key] === "function" ? panels[bar.key]({ close }) : panels[bar.key];
+      const count = counts == null ? void 0 : counts[bar.key];
+      const n = Math.max(0, Math.floor(Number(count == null ? void 0 : count.value) || 0));
       return /* @__PURE__ */ jsxs("div", { children: [
         /* @__PURE__ */ jsx(
           "button",
@@ -769,12 +771,13 @@ function Shell({ panels = {}, children, chatLine = null, label = "Workspace" }) 
             "data-edge": edge,
             "data-testid": `ws-bar-${bar.key}`,
             style: { "--bar": bar.color },
-            "aria-label": bar.label,
+            "aria-label": n > 0 ? `${bar.label}, ${count.label || n}` : bar.label,
             "aria-expanded": isOpen,
             "aria-controls": id,
             onClick: () => setOpen((o) => o === edge ? null : edge)
           }
         ),
+        n > 0 && /* @__PURE__ */ jsx("span", { className: "ws-bar-count", "data-edge": edge, "data-testid": `ws-bar-count-${bar.key}`, "aria-hidden": "true", children: n > 99 ? "99+" : n }),
         /* @__PURE__ */ jsxs(
           "section",
           {
@@ -931,6 +934,121 @@ function prefersReducedMotion() {
   }
 }
 const wordDelay = (i) => WORD_MS_MIN + i * 7 % (WORD_MS_MAX - WORD_MS_MIN + 1);
+const MINE_ROOMS_SHOWN = 8;
+function TeamChatRooms({ status = "ready", rows = [], onOpen, onOpenAll = null, max = MINE_ROOMS_SHOWN, testId = "mine-chat-rooms" }) {
+  if (status === "idle" || status === "loading") return /* @__PURE__ */ jsx("p", { className: "ws-chat-note", "data-testid": `${testId}-loading`, children: "Reading your rooms…" });
+  if (status === "error") return /* @__PURE__ */ jsx("p", { className: "ws-chat-note", "data-testid": `${testId}-error`, children: "Your rooms could not be read just now." });
+  if (!rows.length) return /* @__PURE__ */ jsx("p", { className: "ws-chat-note", "data-testid": `${testId}-empty`, children: "No rooms yet." });
+  const shown = rows.slice(0, max);
+  return /* @__PURE__ */ jsxs(Fragment, { children: [
+    /* @__PURE__ */ jsx("ul", { className: "ws-chat-rooms", "data-testid": testId, children: shown.map((r) => /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs(
+      "button",
+      {
+        type: "button",
+        className: "ws-chat-room",
+        "data-room-id": r.room_id,
+        "data-unread": r.unread > 0 || void 0,
+        onClick: () => onOpen == null ? void 0 : onOpen(r),
+        "aria-label": r.unread > 0 ? `${r.label}, ${r.unread} unread` : r.label,
+        children: [
+          /* @__PURE__ */ jsx("span", { className: "ws-chat-room-name", children: r.label }),
+          r.unread > 0 && /* @__PURE__ */ jsx("span", { className: "ws-chat-unread", "aria-hidden": "true", children: r.unread > 99 ? "99+" : r.unread })
+        ]
+      }
+    ) }, r.room_id)) }),
+    rows.length > shown.length && onOpenAll && /* @__PURE__ */ jsxs("button", { type: "button", className: "ws-link ws-chat-more", onClick: onOpenAll, children: [
+      "All ",
+      rows.length,
+      " rooms in Team Chat"
+    ] })
+  ] });
+}
+function useTeamChatRooms({ adapter, enabled = true, reloadKey = 0 }) {
+  const [state, setState] = useState({ status: "idle", rooms: [], directory: {} });
+  useEffect(() => {
+    if (!enabled || !(adapter == null ? void 0 : adapter.listRooms)) return void 0;
+    let live = true;
+    setState((s) => s.status === "ready" ? s : { ...s, status: "loading" });
+    Promise.all([
+      adapter.listRooms(),
+      adapter.loadDirectory ? Promise.resolve().then(() => adapter.loadDirectory()).catch(() => ({})) : Promise.resolve({})
+    ]).then(
+      ([rooms, directory]) => {
+        if (live) setState({ status: "ready", rooms: rooms || [], directory: directory || {} });
+      },
+      () => {
+        if (live) setState((s) => ({ ...s, status: s.status === "ready" ? "ready" : "error" }));
+      }
+    );
+    return () => {
+      live = false;
+    };
+  }, [adapter, enabled, reloadKey]);
+  return state;
+}
+function dmKey(a, b) {
+  const [x, y] = [String(a), String(b)].sort();
+  return `${x}:${y}`;
+}
+const selfInboxKey = (uid) => `${uid}:${uid}`;
+function isAgentInbox(room) {
+  if ((room == null ? void 0 : room.kind) !== "dm") return false;
+  const [a, b] = String(room.dm_key || "").split(":");
+  return !!a && a === b;
+}
+function dmCounterpart(key, myId) {
+  if (!key) return "";
+  const [a, b] = String(key).split(":");
+  return a === String(myId) ? b : a;
+}
+function dmNamesFor(rooms, directory, myId) {
+  return Object.fromEntries((rooms || []).filter((r) => r.kind === "dm").map((r) => {
+    var _a;
+    return [
+      r.room_id,
+      isAgentInbox(r) ? r.name || "Your agents" : ((_a = directory == null ? void 0 : directory[dmCounterpart(r.dm_key, myId)]) == null ? void 0 : _a.name) || "Direct message"
+    ];
+  }));
+}
+const KIND_LABEL = { company: "Company", help: "Help", project: "Project", djr: "Daily report", dm: "Direct message", preview: "Feature preview" };
+function roomLabel(room, dmNames = {}) {
+  if (!room) return "";
+  if (room.kind === "dm") return (dmNames == null ? void 0 : dmNames[room.room_id]) || room.name || "Direct message";
+  return room.name || KIND_LABEL[room.kind] || "Room";
+}
+function orderRooms(rooms, dmNames = {}) {
+  const rank = { company: 0, help: 1, project: 2, djr: 3, dm: 4 };
+  const label = (r) => roomLabel(r, dmNames);
+  const byLabel = (a, b) => a.kind === "djr" ? label(b).localeCompare(label(a)) : label(a).localeCompare(label(b));
+  return [...rooms || []].sort((a, b) => (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9) || byLabel(a, b) || String(a.room_id).localeCompare(String(b.room_id)));
+}
+function summarize(rows) {
+  const byRoom = {};
+  let total = 0, mentions = 0;
+  for (const r of rows || []) {
+    const unread = Number(r.unread) || 0, m = Number(r.mentions) || 0;
+    byRoom[r.room_id] = { unread, mentions: m, last_message_at: r.last_message_at ?? null };
+    total += unread;
+    mentions += m;
+  }
+  return { byRoom, total, mentions };
+}
+const unreadTotal = (summary) => Math.max(0, Number(summary == null ? void 0 : summary.total) || 0);
+function mineRooms({ rooms, directory = {}, myId = null, summary = null }) {
+  const listed = (rooms || []).filter((r) => r && r.room_id && !isAgentInbox(r));
+  const names = dmNamesFor(listed, directory, myId);
+  const rows = orderRooms(listed, names).map((r) => {
+    var _a, _b, _c, _d;
+    return {
+      room_id: r.room_id,
+      kind: r.kind,
+      label: roomLabel(r, names),
+      unread: ((_b = (_a = summary == null ? void 0 : summary.byRoom) == null ? void 0 : _a[r.room_id]) == null ? void 0 : _b.unread) || 0,
+      mentions: ((_d = (_c = summary == null ? void 0 : summary.byRoom) == null ? void 0 : _c[r.room_id]) == null ? void 0 : _d.mentions) || 0
+    };
+  });
+  return [...rows.filter((r) => r.unread > 0), ...rows.filter((r) => !(r.unread > 0))];
+}
 export {
   ACCENT,
   BAR,
@@ -944,6 +1062,7 @@ export {
   MAX_OPEN_PAPERS,
   MAX_SCREENSHOTS,
   MAX_SCREENSHOT_BYTES,
+  MINE_ROOMS_SHOWN,
   PANEL_MS,
   PIMS_TOKENS,
   Paper,
@@ -958,6 +1077,7 @@ export {
   StatusLine,
   THEME_ATTR,
   THEME_KEY,
+  TeamChatRooms,
   UI_ATTR,
   UI_FEATURE,
   WORD_MS_MAX,
@@ -965,22 +1085,33 @@ export {
   WS,
   applyUi,
   deskReducer,
+  dmCounterpart,
+  dmKey,
+  dmNamesFor,
   emptyDesk,
   fetchUiAllowed,
+  isAgentInbox,
   loadRequests,
   makeDescribe,
+  mineRooms,
+  orderRooms,
   prefersReducedMotion,
   previewOverride,
   pv,
   resolveAllowed,
   resolveTheme,
+  roomLabel,
   screenshotRejection,
   screenshotUrls,
+  selfInboxKey,
   shellStyle,
   submitRequest,
+  summarize,
+  unreadTotal,
   uploadScreenshots,
   usePaperDesk,
   usePimsUi,
+  useTeamChatRooms,
   useWorkspaceFonts,
   wordDelay
 };
