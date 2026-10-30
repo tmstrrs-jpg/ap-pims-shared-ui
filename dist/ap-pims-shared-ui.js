@@ -758,7 +758,7 @@ function Shell({ panels = {}, children, chatLine = null, label = "Workspace", co
       const bar = BARS[edge];
       const id = `${baseId}-${bar.key}`;
       const isOpen = open === edge;
-      const body = typeof panels[bar.key] === "function" ? panels[bar.key]({ close }) : panels[bar.key];
+      const body = typeof panels[bar.key] === "function" ? panels[bar.key]({ close, open: isOpen }) : panels[bar.key];
       const count = counts == null ? void 0 : counts[bar.key];
       const n = Math.max(0, Math.floor(Number(count == null ? void 0 : count.value) || 0));
       return /* @__PURE__ */ jsxs("div", { children: [

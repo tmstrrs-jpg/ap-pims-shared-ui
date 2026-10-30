@@ -22,7 +22,8 @@ export function CloseIcon({ size = 16 }) {
   );
 }
 
-// panels: { index, dashboard, job, mine } -> React nodes (each may be a function of { close }).
+// panels: { index, dashboard, job, mine } -> React nodes (each may be a function of { close, open }; `open` is W8b,
+// as in the portal copy, so a panel can wait to read until it is opened).
 // counts (W8b, optional): { [bar key]: { value, label } } -> a small number beside that bar ("3"), and the bar's name
 // read out with it ("Mine, 3 unread in Team Chat"). The bar itself stays without text; nothing shows for 0.
 export default function Shell({ panels = {}, children, chatLine = null, label = "Workspace", counts = null }) {
@@ -50,7 +51,7 @@ export default function Shell({ panels = {}, children, chatLine = null, label = 
         const bar = BARS[edge];
         const id = `${baseId}-${bar.key}`;
         const isOpen = open === edge;
-        const body = typeof panels[bar.key] === "function" ? panels[bar.key]({ close }) : panels[bar.key];
+        const body = typeof panels[bar.key] === "function" ? panels[bar.key]({ close, open: isOpen }) : panels[bar.key];
         const count = counts?.[bar.key];
         const n = Math.max(0, Math.floor(Number(count?.value) || 0));
         return (
