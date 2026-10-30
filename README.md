@@ -141,7 +141,11 @@ const rows = mineRooms({ rooms: state.rooms, directory: state.directory, myId, s
 - `summary` is the app's own `fn_chat_unread_summary` result (`summarize(rows)`); the list never reads it again.
 - Read only: no messages are loaded and nothing is marked read. A tap opens the app's existing Team Chat screen on
   that room (the two apps' thread screens differ, so they are re-hosted, not rewritten).
-- Agent inboxes ("Your agents") are left out in both apps; order: unread first, then company, help, projects,
-  daily reports, DMs.
+- Agent inboxes ("Your agents") are left out by default (the DJR phone opens the inbox from My agent). The portal,
+  whose Team Chat screen lists the inbox, passes `includeAgentInbox: true` and gets the person's own inbox as a row.
+  Order: unread first, then company, help, projects, daily reports, DMs.
+- The count on the bar and over the list is `mineUnreadTotal(...)`: only what the list shows, so every counted
+  message is one tap away. With `rooms` it is the sum of the rows; without (the bar, before the panel opened) it is
+  `summary.total` less the unread in `inboxRoomIds`, unless `includeAgentInbox`.
 - `Shell` takes an optional `counts` prop (`{ mine: { value, label } }`): a small number beside the bar, read out
   with the bar's name. Nothing shows for 0 or without the prop.

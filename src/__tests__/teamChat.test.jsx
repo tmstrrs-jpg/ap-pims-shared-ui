@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { Shell, TeamChatRooms, useTeamChatRooms, mineRooms, summarize, unreadTotal, isAgentInbox, MINE_ROOMS_SHOWN } from '../index.js'
+import { Shell, TeamChatRooms, useTeamChatRooms, mineRooms, summarize, unreadTotal, mineUnreadTotal, isAgentInbox, MINE_ROOMS_SHOWN } from '../index.js'
 
 afterEach(() => cleanup())
 
@@ -42,6 +42,31 @@ describe('rooms model', () => {
     const a = mineRooms({ rooms: ROOMS, directory: DIRECTORY, myId: ME })
     const b = mineRooms({ rooms: [...ROOMS].reverse(), directory: DIRECTORY, myId: ME })
     expect(b).toEqual(a)
+  })
+  it('the Mine count is what the list shows: the bar number equals the sum of the listed rows', () => {
+    const summary = summarize(SUMMARY_ROWS)
+    const rows = mineRooms({ rooms: ROOMS, directory: DIRECTORY, myId: ME, summary })
+    const shown = rows.reduce((n, r) => n + r.unread, 0)
+    expect(shown).toBe(3)
+    // the list loaded: sum of its rows; not loaded yet (the bar): total less the agent inbox
+    expect(mineUnreadTotal({ summary, rooms: ROOMS, myId: ME })).toBe(shown)
+    expect(mineUnreadTotal({ summary, inboxRoomIds: ['r-inbox'] })).toBe(shown)
+    expect(mineUnreadTotal({ summary, inboxRoomIds: ['r-inbox', 'r-inbox', null] })).toBe(shown)
+    expect(mineUnreadTotal({ summary: null, inboxRoomIds: ['r-inbox'] })).toBe(0)
+  })
+  it('with includeAgentInbox the own inbox is a row, so the count can include it', () => {
+    const summary = summarize(SUMMARY_ROWS)
+    const rows = mineRooms({ rooms: ROOMS, directory: DIRECTORY, myId: ME, summary, includeAgentInbox: true })
+    expect(rows.map((r) => r.room_id)).toEqual(['r-proj-b', 'r-inbox', 'r-company', 'r-help', 'r-proj-a', 'r-dm'])
+    expect(rows.find((r) => r.room_id === 'r-inbox').label).toBe('Your agents')
+    const shown = rows.reduce((n, r) => n + r.unread, 0)
+    expect(shown).toBe(5)
+    expect(mineUnreadTotal({ summary, rooms: ROOMS, myId: ME, includeAgentInbox: true })).toBe(shown)
+    expect(mineUnreadTotal({ summary, includeAgentInbox: true, inboxRoomIds: ['r-inbox'] })).toBe(shown)
+    // someone else's inbox is never listed; with no myId no inbox is listed (fail closed)
+    const other = [...ROOMS, { room_id: 'r-other-inbox', kind: 'dm', dm_key: `${ALEX}:${ALEX}`, name: 'Your agents' }]
+    expect(mineRooms({ rooms: other, myId: ME, includeAgentInbox: true }).some((r) => r.room_id === 'r-other-inbox')).toBe(false)
+    expect(mineRooms({ rooms: ROOMS, includeAgentInbox: true }).some((r) => r.room_id === 'r-inbox')).toBe(false)
   })
 })
 

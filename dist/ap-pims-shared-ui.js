@@ -1034,8 +1034,8 @@ function summarize(rows) {
   return { byRoom, total, mentions };
 }
 const unreadTotal = (summary) => Math.max(0, Number(summary == null ? void 0 : summary.total) || 0);
-function mineRooms({ rooms, directory = {}, myId = null, summary = null }) {
-  const listed = (rooms || []).filter((r) => r && r.room_id && !isAgentInbox(r));
+function mineRooms({ rooms, directory = {}, myId = null, summary = null, includeAgentInbox = false }) {
+  const listed = (rooms || []).filter((r) => r && r.room_id && (!isAgentInbox(r) || includeAgentInbox && myId != null && r.dm_key === selfInboxKey(myId)));
   const names = dmNamesFor(listed, directory, myId);
   const rows = orderRooms(listed, names).map((r) => {
     var _a, _b, _c, _d;
@@ -1048,6 +1048,17 @@ function mineRooms({ rooms, directory = {}, myId = null, summary = null }) {
     };
   });
   return [...rows.filter((r) => r.unread > 0), ...rows.filter((r) => !(r.unread > 0))];
+}
+function mineUnreadTotal({ summary, rooms = null, myId = null, includeAgentInbox = false, inboxRoomIds = [] }) {
+  if (!summary) return 0;
+  if (Array.isArray(rooms)) {
+    return mineRooms({ rooms, myId, summary, includeAgentInbox }).reduce((n, r) => n + (Number(r.unread) || 0), 0);
+  }
+  const skip = includeAgentInbox ? 0 : [...new Set((inboxRoomIds || []).filter(Boolean))].reduce((n, id) => {
+    var _a, _b;
+    return n + (Number((_b = (_a = summary.byRoom) == null ? void 0 : _a[id]) == null ? void 0 : _b.unread) || 0);
+  }, 0);
+  return Math.max(0, unreadTotal(summary) - skip);
 }
 export {
   ACCENT,
@@ -1094,6 +1105,7 @@ export {
   loadRequests,
   makeDescribe,
   mineRooms,
+  mineUnreadTotal,
   orderRooms,
   prefersReducedMotion,
   previewOverride,
