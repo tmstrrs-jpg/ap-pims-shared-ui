@@ -24,3 +24,6 @@ export { PIMS_TOKENS } from "./tokens/names.js";
 export * from "./theme/uiTheme.js";
 export { usePimsUi } from "./theme/usePimsUi.js";
 export { PimsLookMenu } from "./theme/PimsLookMenu.jsx";
+
+// Workspace shell (W1, moved here from the PM Portal) and its phone pieces (W6a). CSS: 'ap-pims-shared-ui/workspace.css'.
+export * from "./workspace/index.js";
