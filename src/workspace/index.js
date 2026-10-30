@@ -8,3 +8,5 @@ export { WS, BARS, BAR, EASE_PANEL, PANEL_MS, PANEL_MS_PHONE, WORD_MS_MIN, WORD_
 export { shellStyle, useWorkspaceFonts } from "./shellStyle.js";
 export { emptyDesk, deskReducer, usePaperDesk } from "./deskState.js";
 export { prefersReducedMotion, wordDelay } from "./unfold.js";
+// W8b · the Team Chat room list for the Mine panel (one component for the portal and the DJR phone). CSS: 'ap-pims-shared-ui/chat.css'.
+export * from "../chat/index.js";

@@ -22,12 +22,15 @@ export function CloseIcon({ size = 16 }) {
   );
 }
 
-// panels: { index, dashboard, job, mine } -> React nodes (each may be a function of { close }).
+// panels: { index, dashboard, job, mine } -> React nodes (each may be a function of { close, open }; `open` is W8b,
+// as in the portal copy, so a panel can wait to read until it is opened).
 // edges: which of the four bars to show (W6a UX fix: the phone shows only the bars that hold something).
 // variant: "phone" (W6a) insets the frame from the notch and home indicator, gives the bars a 44 px hit area,
 //   takes the stage out of the Tab order and slides panels faster (PANEL_MS_PHONE). Omitted: the W1 desktop frame.
 // children: React nodes, or a function of { openPanel(key) } so a labelled button can open a panel too.
-export default function Shell({ panels = {}, children, chatLine = null, label = "Workspace", edges = EDGES, variant }) {
+// counts (W8b, optional): { [bar key]: { value, label } } -> a small number beside that bar ("3"), and the bar's name
+// read out with it ("Mine, 3 unread in Team Chat"). The bar itself stays without text; nothing shows for 0.
+export default function Shell({ panels = {}, children, chatLine = null, label = "Workspace", edges = EDGES, variant, counts = null }) {
   useWorkspaceFonts();
   const [open, setOpen] = useState(null);
   const baseId = useId();
@@ -66,15 +69,18 @@ export default function Shell({ panels = {}, children, chatLine = null, label = 
         const bar = BARS[edge];
         const id = `${baseId}-${bar.key}`;
         const isOpen = open === edge;
-        const body = typeof panels[bar.key] === "function" ? panels[bar.key]({ close }) : panels[bar.key];
+        const body = typeof panels[bar.key] === "function" ? panels[bar.key]({ close, open: isOpen }) : panels[bar.key];
+        const count = counts?.[bar.key];
+        const n = Math.max(0, Math.floor(Number(count?.value) || 0));
         return (
           <div key={edge}>
             <button
               id={`${baseId}-bar-${edge}`} type="button" className="ws-bar" data-edge={edge} data-testid={`ws-bar-${bar.key}`}
               style={{ "--bar": bar.color }}
-              aria-label={bar.label} aria-expanded={isOpen} aria-controls={id}
+              aria-label={n > 0 ? `${bar.label}, ${count.label || n}` : bar.label} aria-expanded={isOpen} aria-controls={id}
               onClick={() => { opener.current = null; setOpen((o) => (o === edge ? null : edge)); }}
             />
+            {n > 0 && <span className="ws-bar-count" data-edge={edge} data-testid={`ws-bar-count-${bar.key}`} aria-hidden="true">{n > 99 ? "99+" : n}</span>}
             <section
               id={id} className="ws-panel" data-edge={edge} data-open={isOpen} data-testid={`ws-panel-${bar.key}`}
               style={{ "--panel": bar.panel }} aria-label={bar.label} aria-hidden={!isOpen} inert={!isOpen}
