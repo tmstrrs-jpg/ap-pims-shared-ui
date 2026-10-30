@@ -43,14 +43,20 @@ function release(owner) {
   applyAll(theme)
 }
 
+// Preview URLs only (?ui= on localhost / deploy previews): once anyone on this page picks a look, the
+// override stops applying for every consumer, including ones that mount later, until the page reloads.
+// Without this, a second consumer kept its captured override and held glass on after Classic was chosen.
+let previewCleared = false
+export function __resetPreviewForTests() { previewCleared = false }
+
 // null = nothing stored: the default then follows the gate (everyone allowed gets glass, otherwise classic).
 const readLook = () => { const v = read(LOOK_KEY, null); return v === 'glass' || v === 'classic' ? v : null }
 
 export function usePimsUi({ allowed, themes = ['system', 'light', 'dark'] } = {}) {
   // Captured once: a router rewriting the query string must not switch the preview look off mid-session.
   const [initialOverride] = useState(() => previewOverride())
-  // An explicit setLook clears the override for the rest of this mount, so the menu works on preview URLs.
-  const [cleared, setCleared] = useState(false)
+  // An explicit setLook (in any consumer on the page) clears the override, so the menu works on preview URLs.
+  const [cleared, setCleared] = useState(() => previewCleared)
   const override = cleared ? null : initialOverride
   const [stored, setLookState] = useState(readLook)
   // The preview override has precedence over storage (and the storage sync cannot knock it back).
@@ -59,7 +65,8 @@ export function usePimsUi({ allowed, themes = ['system', 'light', 'dark'] } = {}
   const [dark, setDark] = useState(osDark)
 
   useEffect(() => {
-    const sync = () => { setLookState(readLook()); setThemeState(read(THEME_KEY, 'system')) }
+    // A theme change also fires pims:ui; only a look choice (previewCleared) releases the override.
+    const sync = () => { if (previewCleared) setCleared(true); setLookState(readLook()); setThemeState(read(THEME_KEY, 'system')) }
     const onStorage = (e) => { if (!e || e.key === null || e.key === LOOK_KEY || e.key === THEME_KEY) sync() }
     window.addEventListener(EVENT, sync)
     window.addEventListener('storage', onStorage)
@@ -95,6 +102,7 @@ export function usePimsUi({ allowed, themes = ['system', 'light', 'dark'] } = {}
 
   const setLook = useCallback((v) => {
     if (!canChoose) return
+    previewCleared = true
     setCleared(true)
     write(LOOK_KEY, v === 'glass' ? 'glass' : 'classic')
     setLookState(v === 'glass' ? 'glass' : 'classic')
