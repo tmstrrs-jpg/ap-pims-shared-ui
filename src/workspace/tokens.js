@@ -36,6 +36,8 @@ export const BAR = Object.freeze({ thick: 14, hover: 24, share: 0.25, hoverMs: 2
 // Panels slide in over 0.45 s on the canvas curve.
 export const EASE_PANEL = "cubic-bezier(.2,.8,.2,1)";
 export const PANEL_MS = 450;
+// On the phone (W6a UX fix) the panels are a navigation surface opened many times a day: under the ~300 ms ceiling.
+export const PANEL_MS_PHONE = 260;
 
 // Unfolding text: each word of an agent reply lands 85-110 ms after the last.
 export const WORD_MS_MIN = 85;

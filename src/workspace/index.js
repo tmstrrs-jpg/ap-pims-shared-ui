@@ -4,7 +4,7 @@ export { default as Shell, CloseIcon } from "./Shell.jsx";
 export { default as Paper } from "./Paper.jsx";
 export { default as Sheet } from "./Sheet.jsx";
 export { default as StatusLine } from "./StatusLine.jsx";
-export { WS, BARS, BAR, EASE_PANEL, PANEL_MS, WORD_MS_MIN, WORD_MS_MAX, SERIF, SANS, FONT_HREF, MAX_OPEN_PAPERS } from "./tokens.js";
+export { WS, BARS, BAR, EASE_PANEL, PANEL_MS, PANEL_MS_PHONE, WORD_MS_MIN, WORD_MS_MAX, SERIF, SANS, FONT_HREF, MAX_OPEN_PAPERS } from "./tokens.js";
 export { shellStyle, useWorkspaceFonts } from "./shellStyle.js";
 export { emptyDesk, deskReducer, usePaperDesk } from "./deskState.js";
 export { prefersReducedMotion, wordDelay } from "./unfold.js";

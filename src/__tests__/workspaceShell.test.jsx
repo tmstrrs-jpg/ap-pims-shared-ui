@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { Shell, Paper, Sheet, StatusLine, deskReducer, emptyDesk, wordDelay, BARS, EASE_PANEL, PANEL_MS, BAR, MAX_OPEN_PAPERS } from '../index.js'
+import { Shell, Paper, Sheet, StatusLine, deskReducer, emptyDesk, wordDelay, BARS, EASE_PANEL, PANEL_MS, PANEL_MS_PHONE, BAR, MAX_OPEN_PAPERS } from '../index.js'
 
 afterEach(() => { cleanup(); vi.useRealTimers(); delete window.matchMedia })
 
@@ -148,3 +148,54 @@ describe('no pop-ups and 44 px targets', () => {
 })
 
 import React from 'react'
+
+describe('W6a UX fixes (30 Oct review)', () => {
+  it('shows only the edges asked for, and a labelled button can open a panel and gets focus back', () => {
+    vi.useFakeTimers()
+    render(
+      <Shell variant="phone" edges={['left', 'right']} panels={{ index: ({ close }) => <button onClick={close}>done</button>, job: <p>job</p> }}>
+        {({ openPanel }) => <button onClick={() => openPanel('index')}>Menu</button>}
+      </Shell>
+    )
+    expect(screen.queryByTestId('ws-bar-dashboard')).toBeNull()
+    expect(screen.queryByTestId('ws-bar-mine')).toBeNull()
+    const menu = screen.getByRole('button', { name: 'Menu' })
+    menu.focus()
+    fireEvent.click(menu)
+    expect(screen.getByTestId('ws-panel-index').dataset.open).toBe('true')
+    fireEvent.click(screen.getByText('done'))
+    act(() => { vi.runAllTimers() })
+    expect(document.activeElement).toBe(menu)
+  })
+  it('the phone variant takes the stage out of the Tab order and slides panels in 260 ms', () => {
+    const { container } = render(<Shell variant="phone"><p>t</p></Shell>)
+    const root = container.querySelector('.ws-root')
+    expect(root.dataset.variant).toBe('phone')
+    expect(root.style.getPropertyValue('--ws-panel-ms')).toBe(`${PANEL_MS_PHONE}ms`)
+    expect(PANEL_MS_PHONE).toBe(260)
+    expect(container.querySelector('.ws-stage').getAttribute('tabindex')).toBe('-1')
+    cleanup()
+    const desk = render(<Shell><p>t</p></Shell>).container
+    expect(desk.querySelector('.ws-stage').hasAttribute('tabindex')).toBe(false)
+    expect(desk.querySelectorAll('.ws-bar').length).toBe(4)
+  })
+  it('the sheet focuses the current row, has a grab handle, and closes on a downward flick but not a small drag', () => {
+    const onClose = vi.fn()
+    render(<Sheet open title="Switch project" onClose={onClose}><button>Alpha</button><button aria-current="true">Beta</button></Sheet>)
+    expect(document.activeElement.textContent).toBe('Beta')
+    expect(document.querySelector('.ws-bsheet-handle')).toBeTruthy()
+    const grip = screen.getByTestId('ws-bottom-sheet-grip')
+    // jsdom has no PointerEvent: a MouseEvent of the pointer type carries clientY, plus a pointerId
+    const ptr = (type, id, y) => { const e = new MouseEvent(type, { bubbles: true, clientY: y, button: 0 }); Object.defineProperty(e, 'pointerId', { value: id }); act(() => { grip.dispatchEvent(e) }) }
+    ptr('pointerdown', 1, 100); ptr('pointermove', 1, 104); ptr('pointerup', 1, 104)
+    expect(onClose).not.toHaveBeenCalled()
+    ptr('pointerdown', 2, 100); ptr('pointermove', 2, 260); ptr('pointerup', 2, 260)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+  it('the phone frame uses the safe-area insets and 44 px bar hit areas', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/workspace/workspace.css'), 'utf8')
+    expect(css).toMatch(/\.ws-root\[data-variant="phone"\] \.ws-stage \{\s*padding: calc\(18px \+ env\(safe-area-inset-top, 0px\)\)/)
+    expect(css).toMatch(/\.ws-root\[data-variant="phone"\] \.ws-bar\[data-edge="left"\]::before \{ inset: -10px -30px -10px 0; \}/)
+    expect(css.slice(css.indexOf('.ws-phone-menu {')).split('}')[0]).toMatch(/min-height: 44px/)
+  })
+})
