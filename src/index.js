@@ -27,3 +27,4 @@ export { PimsLookMenu } from "./theme/PimsLookMenu.jsx";
 
 // Workspace shell (W1, moved here from the PM Portal) and its phone pieces (W6a). CSS: 'ap-pims-shared-ui/workspace.css'.
 export * from "./workspace/index.js";
+// (The W8b Team Chat room list comes with the workspace exports above; CSS: 'ap-pims-shared-ui/chat.css'.)

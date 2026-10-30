@@ -123,3 +123,29 @@ import 'ap-pims-shared-ui/workspace.css';
 
 Nothing in the apps uses this package copy yet: the DJR app vendors it (`src/vendor/pims-ui/workspace/`) for W6a,
 and the portal keeps its own `src/workspace/` until a separate change re-points it. No tag is cut for 0.4.0-rc.1.
+
+## Team Chat room list (v0.5, W8b)
+
+One Team Chat room list for the workspace's Mine panel, used by the PM Portal and the DJR phone (W8 Decision 2), so
+one login sees the same rooms in both. Presentational: each app keeps its own Supabase calls and passes an adapter.
+
+```js
+import { TeamChatRooms, useTeamChatRooms, mineRooms } from 'ap-pims-shared-ui';
+import 'ap-pims-shared-ui/chat.css';
+
+const state = useTeamChatRooms({ adapter: { listRooms, loadDirectory }, enabled: panelOpen });
+const rows = mineRooms({ rooms: state.rooms, directory: state.directory, myId, summary });
+<TeamChatRooms status={state.status} rows={rows} onOpen={(room) => openTeamChat(room.room_id)} />
+```
+
+- `summary` is the app's own `fn_chat_unread_summary` result (`summarize(rows)`); the list never reads it again.
+- Read only: no messages are loaded and nothing is marked read. A tap opens the app's existing Team Chat screen on
+  that room (the two apps' thread screens differ, so they are re-hosted, not rewritten).
+- Agent inboxes ("Your agents") are left out by default (the DJR phone opens the inbox from My agent). The portal,
+  whose Team Chat screen lists the inbox, passes `includeAgentInbox: true` and gets the person's own inbox as a row.
+  Order: unread first, then company, help, projects, daily reports, DMs.
+- The count on the bar and over the list is `mineUnreadTotal(...)`: only what the list shows, so every counted
+  message is one tap away. With `rooms` it is the sum of the rows; without (the bar, before the panel opened) it is
+  `summary.total` less the unread in `inboxRoomIds`, unless `includeAgentInbox`.
+- `Shell` takes an optional `counts` prop (`{ mine: { value, label } }`): a small number beside the bar, read out
+  with the bar's name. Nothing shows for 0 or without the prop.
