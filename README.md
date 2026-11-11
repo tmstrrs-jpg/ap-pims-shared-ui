@@ -113,6 +113,8 @@ inline close icon (no `lucide-react` dependency) and the stylesheet being a sepa
 ```js
 import { Shell, Paper, Sheet, StatusLine, usePaperDesk } from 'ap-pims-shared-ui';
 import 'ap-pims-shared-ui/workspace.css';
+// Inter and Newsreader, served from our own files (no Google Fonts); import it where the workspace opens:
+import 'ap-pims-shared-ui/workspace-fonts.css';
 ```
 
 - `Shell`: four bars (Index, Dashboard, This job, Mine), one panel open at a time, Esc closes, focus returns to the bar.
