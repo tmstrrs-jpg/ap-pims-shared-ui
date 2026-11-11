@@ -45,7 +45,7 @@ export const WORD_MS_MAX = 110;
 
 export const SERIF = "'Newsreader', 'Iowan Old Style', Georgia, serif";
 export const SANS = "'Inter', -apple-system, 'Segoe UI', sans-serif";
-export const FONT_HREF = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400&display=swap";
+// Inter and Newsreader are served from our own origin: the app imports "ap-pims-shared-ui/workspace-fonts.css" (nothing is fetched from Google).
 
 // At most two papers open beside the main one; the rest wait as cards.
 export const MAX_OPEN_PAPERS = 2;

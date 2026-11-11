@@ -690,17 +690,8 @@ const WORD_MS_MIN = 85;
 const WORD_MS_MAX = 110;
 const SERIF = "'Newsreader', 'Iowan Old Style', Georgia, serif";
 const SANS = "'Inter', -apple-system, 'Segoe UI', sans-serif";
-const FONT_HREF = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400&display=swap";
 const MAX_OPEN_PAPERS = 2;
 function useWorkspaceFonts() {
-  useEffect(() => {
-    if (typeof document === "undefined" || document.querySelector("link[data-ws-fonts]")) return;
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = FONT_HREF;
-    link.dataset.wsFonts = "";
-    document.head.appendChild(link);
-  }, []);
 }
 const shellStyle = Object.freeze({
   "--ws-table": WS.table,
@@ -730,7 +721,6 @@ function CloseIcon({ size = 16 }) {
   ] });
 }
 function Shell({ panels = {}, children, chatLine = null, label = "Workspace", edges = EDGES, variant, counts = null }) {
-  useWorkspaceFonts();
   const [open, setOpen] = useState(null);
   const baseId = useId();
   const opener = useRef(null);
@@ -1122,7 +1112,6 @@ export {
   CloseIcon,
   EASE_PANEL,
   F,
-  FONT_HREF,
   GlobalCapture,
   LOOK_KEY,
   MAX_OPEN_PAPERS,
